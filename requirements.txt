@@ -1,0 +1,5 @@
+schedule
+requests
+bs4
+fuzzywuzzy
+mysql-connector-python
