@@ -2,6 +2,8 @@ import pytest
 import sys
 import os
 from unittest.mock import Mock, patch
+import datetime
+from datetime import timezone, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 
@@ -12,7 +14,11 @@ from parser import (
     send_telegram_message,
     connect_db,
     is_vacancy_sent,
-    mark_vacancy_sent
+    mark_vacancy_sent,
+    collect_statistics,
+    format_statistics_message,
+    send_statistics,
+    get_time
 )
 
 class TestParser:
@@ -164,3 +170,138 @@ class TestParser:
         result = is_vacancy_sent(mock_conn, 'https://test.com/vacancy/999')
         
         assert result == False
+    
+    # Новые тесты для статистики
+    def test_collect_statistics_no_db(self):
+        result = collect_statistics(None)
+        assert result is None
+    
+    @patch('parser.get_time')
+    def test_collect_statistics_with_db(self, mock_get_time):
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_conn.cursor.return_value = mock_cursor
+        
+        # Мокируем результаты запросов - fetchone для COUNT, fetchall для компаний
+        mock_cursor.fetchone.side_effect = [
+            [5],  # total_today
+            [3],  # total_yesterday  
+            [100]  # total_all
+        ]
+        mock_cursor.fetchall.return_value = [('Company A', 2), ('Company B', 1)]  # top_companies
+        
+        # Мокируем время
+        mock_time = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone(timedelta(hours=3)))
+        mock_get_time.return_value = mock_time
+        
+        result = collect_statistics(mock_conn)
+        
+        assert result is not None
+        assert result['total_today'] == 5
+        assert result['total_yesterday'] == 3
+        assert result['total_all'] == 100
+        assert result['date'] == '15.01.2024'
+        assert len(result['top_companies']) == 2
+        assert result['top_companies'] == [('Company A', 2), ('Company B', 1)]
+    
+    @patch('parser.get_time')
+    def test_format_statistics_message_with_data(self, mock_get_time):
+        # Мокируем время для предсказуемого результата
+        mock_time = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone(timedelta(hours=3)))
+        mock_get_time.return_value = mock_time
+        
+        stats = {
+            'total_today': 8,
+            'total_yesterday': 5,
+            'total_all': 150,
+            'top_companies': [('Yandex', 3), ('Sber', 2), ('Tinkoff', 1)],
+            'date': '15.01.2024'
+        }
+        
+        message = format_statistics_message(stats)
+        
+        # Проверяем с HTML тегами
+        assert '📊 <b>Статистика за 15.01.2024</b>' in message
+        assert '<b>Сегодня найдено:</b> 8 вакансий 📈 +3' in message
+        assert '<b>Всего в базе:</b> 150 вакансий' in message
+        assert '<b>🏢 Топ компаний сегодня:</b>' in message
+        assert '1. Yandex: 3 вакансий' in message
+        assert '2. Sber: 2 вакансий' in message  
+        assert '3. Tinkoff: 1 вакансий' in message
+        assert '⏰ Отчет сгенерирован: 10:30' in message
+
+    @patch('parser.get_time')
+    def test_format_statistics_message_no_data(self, mock_get_time):
+        # Мокируем время для предсказуемого результата
+        mock_time = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone(timedelta(hours=3)))
+        mock_get_time.return_value = mock_time
+        
+        stats = {
+            'total_today': 0,
+            'total_yesterday': 0,
+            'total_all': 0,
+            'top_companies': [],
+            'date': '15.01.2024'
+        }
+        
+        message = format_statistics_message(stats)
+        
+        # Проверяем с HTML тегами
+        assert '<b>Сегодня найдено:</b> 0 вакансий ➡️ 0' in message
+        assert '<b>Всего в базе:</b> 0 вакансий' in message
+        assert '<i>Сегодня вакансий не найдено</i>' in message
+        assert '⏰ Отчет сгенерирован: 10:30' in message
+    
+    def test_format_statistics_message_none(self):
+        message = format_statistics_message(None)
+        assert message == "❌ Не удалось собрать статистику"
+    
+    @patch('parser.collect_statistics')
+    @patch('parser.requests.post')
+    def test_send_statistics_success(self, mock_post, mock_collect):
+        mock_db = Mock()
+        mock_stats = {
+            'total_today': 5,
+            'total_yesterday': 3,
+            'total_all': 100,
+            'top_companies': [('Test Co', 2)],
+            'date': '15.01.2024'
+        }
+        mock_collect.return_value = mock_stats
+        
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+        
+        success = send_statistics(mock_db, 'token', 'chat123')
+        
+        assert success == True
+        mock_post.assert_called_once()
+    
+    @patch('parser.collect_statistics')
+    def test_send_statistics_no_stats(self, mock_collect):
+        mock_db = Mock()
+        mock_collect.return_value = None
+        
+        success = send_statistics(mock_db, 'token', 'chat123')
+        
+        assert success == False
+    
+    @patch('parser.collect_statistics')
+    @patch('parser.requests.post')
+    def test_send_statistics_network_error(self, mock_post, mock_collect):
+        mock_db = Mock()
+        mock_stats = {'total_today': 1, 'total_yesterday': 0, 'total_all': 10, 'top_companies': [], 'date': '15.01.2024'}
+        mock_collect.return_value = mock_stats
+        
+        mock_post.side_effect = Exception("Network error")
+        
+        success = send_statistics(mock_db, 'token', 'chat123')
+        
+        assert success == False
+    
+    def test_get_time(self):
+        time_result = get_time()
+        assert isinstance(time_result, datetime.datetime)
+        # Проверяем что время в правильном часовом поясе (+3)
+        assert time_result.tzinfo.utcoffset(time_result) == timedelta(hours=3)

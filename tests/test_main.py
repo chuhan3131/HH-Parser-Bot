@@ -5,7 +5,7 @@ from unittest.mock import patch, Mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 
-from main import job, main
+from main import job, main, schedule_stats
 
 class TestMain:
     
@@ -24,7 +24,8 @@ class TestMain:
             "chat_id": "test_chat",
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": True
         }
         
         test_vacancies = [{
@@ -52,7 +53,8 @@ class TestMain:
             "min_similarity": 70,
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": True
         }
         
         test_vacancies = [{
@@ -73,7 +75,8 @@ class TestMain:
             "search_text": "Python",
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": False
         }
         
         mock_parse.return_value = []
@@ -94,7 +97,8 @@ class TestMain:
             "interval": 1,
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": True
         }
         mock_get_config.return_value = mock_config
         
@@ -121,7 +125,65 @@ class TestMain:
             "search_text": "Python", 
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": True
         }
         
-        main()
+        # main() просто возвращается при ошибке, не вызывает sys.exit
+        result = main()
+        assert result is None  # Просто проверяем что функция завершилась
+    
+    @patch('main.schedule')
+    def test_schedule_stats_enabled(self, mock_schedule):
+        mock_db = Mock()
+        config = {
+            "daily_stats": True
+        }
+        
+        schedule_stats(mock_db, config)
+        
+        mock_schedule.every.assert_called_once()
+    
+    @patch('main.schedule')
+    def test_schedule_stats_disabled(self, mock_schedule):
+        mock_db = Mock()
+        config = {
+            "daily_stats": False
+        }
+        
+        schedule_stats(mock_db, config)
+        
+        mock_schedule.every.assert_not_called()
+    
+    @patch('main.get_config')
+    @patch('main.connect_db')
+    @patch('main.create_table_if_not_exists')
+    @patch('main.schedule')
+    @patch('main.job')
+    def test_main_with_daily_stats_disabled(self, mock_job, mock_schedule, 
+                                          mock_create_table, mock_connect_db, 
+                                          mock_get_config):
+        mock_config = {
+            "bot_token": "test",
+            "chat_id": "test", 
+            "search_text": "Python",
+            "interval": 1,
+            "excluded_text": "",
+            "area_ids": [],
+            "experience": "",
+            "daily_stats": False  # Статистика отключена
+        }
+        mock_get_config.return_value = mock_config
+        
+        mock_db = Mock()
+        mock_connect_db.return_value = mock_db
+        
+        mock_schedule.run_pending.side_effect = KeyboardInterrupt
+        
+        try:
+            main()
+        except KeyboardInterrupt:
+            pass
+        
+        # Проверяем что статистика не планируется
+        mock_schedule.every().day.at.assert_not_called()

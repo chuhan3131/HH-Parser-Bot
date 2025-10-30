@@ -20,7 +20,9 @@ class TestBuilder:
             "search_text": "test",
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": True,
+            "stats_time": "00:00"
         }
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -32,6 +34,8 @@ class TestBuilder:
                 config = load_config()
                 assert config["min_similarity"] == 80
                 assert config["interval"] == 15
+                assert config["daily_stats"] == True
+                assert config["stats_time"] == "00:00"
         finally:
             os.unlink(temp_path)
     
@@ -40,6 +44,35 @@ class TestBuilder:
             config = load_config()
             assert config["min_similarity"] == 70
             assert config["interval"] == 10
+            assert config["daily_stats"] == True  # default value
+            assert config["stats_time"] == "00:00"  # default value
+    
+    def test_load_config_missing_new_fields(self):
+        """Тест загрузки старого конфига без новых полей"""
+        old_config = {
+            "min_similarity": 80,
+            "interval": 15,
+            "bot_token": "test_token",
+            "chat_id": "test_chat",
+            "search_text": "test",
+            "excluded_text": "",
+            "area_ids": [],
+            "experience": ""
+            # Отсутствуют daily_stats и stats_time
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(old_config, f)
+            temp_path = f.name
+        
+        try:
+            with patch('builder.CONFIG_FILE', temp_path):
+                config = load_config()
+                assert config["min_similarity"] == 80
+                assert config["daily_stats"] == True  # должно добавиться значение по умолчанию
+                assert config["stats_time"] == "00:00"  # должно добавиться значение по умолчанию
+        finally:
+            os.unlink(temp_path)
     
     def test_save_config(self):
         test_config = {
@@ -50,7 +83,9 @@ class TestBuilder:
             "search_text": "test",
             "excluded_text": "",
             "area_ids": [],
-            "experience": ""
+            "experience": "",
+            "daily_stats": False,
+            "stats_time": "09:00"
         }
         
         mock_file = mock_open()
@@ -83,6 +118,9 @@ class TestBuilder:
         ("1-3", "between1And3"), 
         ("3-6", "between3And6"),
         ("6+", "moreThan6"),
+        ("1", "between1And3"),
+        ("5", "between3And6"),
+        ("7", "moreThan6"),
     ])
     def test_get_experience_various_inputs(self, input_exp, expected):
         with patch('builtins.input', return_value=input_exp):
@@ -93,3 +131,12 @@ class TestBuilder:
         assert REGIONS["россия"] == 113
         assert REGIONS["украина"] == 5
         assert REGIONS["казахстан"] == 40
+        assert REGIONS["беларусь"] == 16
+        assert REGIONS["грузия"] == 28
+    
+    def test_get_experience_invalid_input_then_valid(self):
+        """Тест неверного ввода, затем правильного"""
+        inputs = ["invalid", "1-3"]
+        with patch('builtins.input', side_effect=inputs):
+            result = get_experience()
+            assert result == "between1And3"
