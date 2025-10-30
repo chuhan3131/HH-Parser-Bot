@@ -1,8 +1,118 @@
+import json
 import requests
 from bs4 import BeautifulSoup
 from fuzzywuzzy import fuzz
 import mysql.connector
-import json
+import datetime
+from datetime import timezone, timedelta
+
+def get_time():
+    """Получаем текущее время"""
+    tz = timezone(timedelta(hours=3))
+    return datetime.datetime.now(tz)
+
+def collect_statistics(db_conn):
+    """Сбор ежедневной статистики"""
+    if db_conn is None:
+        print("БД не подключена - статистика недоступна")
+        return None
+        
+    cursor = db_conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT COUNT(*) as total_today 
+            FROM sent_vacancies 
+            WHERE DATE(sent_date) = CURDATE()
+        """)
+        total_today = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT COUNT(*) as total_yesterday 
+            FROM sent_vacancies 
+            WHERE DATE(sent_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+        """)
+        total_yesterday = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT company, COUNT(*) as count 
+            FROM sent_vacancies 
+            WHERE DATE(sent_date) = CURDATE()
+            GROUP BY company 
+            ORDER BY count DESC 
+            LIMIT 5
+        """)
+        top_companies = cursor.fetchall()
+
+        cursor.execute("SELECT COUNT(*) FROM sent_vacancies")
+        total_all = cursor.fetchone()[0]
+        
+        return {
+            'total_today': total_today,
+            'total_yesterday': total_yesterday,
+            'top_companies': top_companies,
+            'total_all': total_all,
+            'date': get_time().strftime('%d.%m.%Y')
+        }
+    except Exception as e:
+        print(f"Ошибка сбора статистики: {e}")
+        return None
+    finally:
+        cursor.close()
+
+def format_statistics_message(stats):
+    """Форматирование сообщения со статистикой"""
+    if not stats:
+        return "❌ Не удалось собрать статистику"
+    
+    message = f"📊 <b>Статистика за {stats['date']}</b>\n\n"
+
+    diff = stats['total_today'] - stats['total_yesterday']
+    if diff > 0:
+        trend = f"📈 +{diff}"
+    elif diff < 0:
+        trend = f"📉 {diff}"
+    else:
+        trend = "➡️ 0"
+    
+    message += f"<b>Сегодня найдено:</b> {stats['total_today']} вакансий {trend}\n"
+    message += f"<b>Всего в базе:</b> {stats['total_all']} вакансий\n\n"
+
+    if stats['top_companies']:
+        message += "<b>🏢 Топ компаний сегодня:</b>\n"
+        for i, (company, count) in enumerate(stats['top_companies'], 1):
+            message += f"{i}. {company}: {count} вакансий\n"
+    else:
+        message += "<i>Сегодня вакансий не найдено</i>\n"
+    
+    message += f"\n⏰ Отчет сгенерирован: {get_time().strftime('%H:%M')}"
+    
+    return message
+
+def send_statistics(db_conn, bot_token, chat_id):
+    """Отправка ежедневной статистики"""
+    try:
+        stats = collect_statistics(db_conn)
+        if stats is None:
+            return False
+            
+        message = format_statistics_message(stats)
+        
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            'chat_id': chat_id,
+            'text': message,
+            'parse_mode': 'HTML'
+        }
+        
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        
+        print(f"Ежедневная статистика отправлена в {get_time().strftime('%H:%M')}")
+        return True
+        
+    except Exception as e:
+        print(f"Ошибка отправки статистики: {e}")
+        return False
 
 def html_from_urlfetch_(url):
     headers = {
@@ -86,7 +196,7 @@ def parse_vacancies_html(html_content):
     return vacancies
 
 def parse_vacancies_from_url(url):
-    html = html_from_url(url)
+    html = html_from_urlfetch_(url)
     if html:
         return parse_vacancies_html(html)
     return []
