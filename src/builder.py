@@ -5,18 +5,20 @@ import os
 CONFIG_FILE = 'config.json'
 
 
-DEFAULT_CONFIG = {
-    "min_similarity": 70,
-    "interval": 10,
-    "bot_token": "",
-    "chat_id": "",
-    "search_text": "Middle Python Backend Developer",
-    "excluded_text": "",
-    "area_ids": [],
-    "experience": ""
+DEFAULT_CONFIG = {              # Заполняется автоматически при запуске файла
+    "min_similarity": 70,       # Минимальный процент схожести вакансии с запросом 
+    "interval": 10,             # Интервал проверки новых вакансий в минутах
+    "bot_token": "",            # Токен бота от @BotFather 
+    "chat_id": "",              # Твой ID в Telegram 
+    "search_text": "Middle Python Backend Developer",  # Поисковый запрос
+    "excluded_text": "",        # Слова для исключения из поиска
+    "area_ids": [],             # Список регионов для поиска 
+    "experience": "",           # Опыт работы
+    "daily_stats": True,        # Ежедневная статистика (True/False)
+    "stats_time": "00:00"       # Время отправки статистики по МСК
 }
 
-REGIONS = {
+REGIONS = {         # Для составления URL (не менять)
     "россия": 113,
     "украина": 5,
     "казахстан": 40,
@@ -27,6 +29,7 @@ REGIONS = {
     "кыргызстан": 48,
     "узбекистан": 97
 }
+
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
