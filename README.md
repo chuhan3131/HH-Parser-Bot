@@ -1,36 +1,41 @@
 # HH Parser Bot
 
-Бот для мониторинга вакансий с hh.ru с отправкой в Telegram.
+A bot for monitoring job listings from hh.ru and sending them to Telegram.
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
+
 ```
 pip install -r requirements.txt
 python src/builder.py
 python src/main.py
 ```
 
-## 📁 Структура проекта
+## 📁 Project Structure
 
-    src/main.py - основной скрипт мониторинга
+```
+src/main.py - main monitoring script
 
-    src/builder.py - настройка параметров поиска
+src/builder.py - search parameter configuration
 
-    src/parser.py - парсинг вакансий и работа с БД
+src/parser.py - job parsing and database handling
 
-    tests/ - тесты
+tests/ - tests
 
-    config.json - файл конфигурации
+config.json - configuration file
+```
 
-## 🔧 Функции
+## 🔧 Features
 
-    ✅ Автопарсинг вакансий с hh.ru
+```
+✅ Automatic job parsing from hh.ru
 
-    ✅ Проверка релевантности (fuzzy matching)
+✅ Relevance check (fuzzy matching)
 
-    ✅ Отправка в Telegram
+✅ Telegram notifications
 
-    ✅ История отправок (MySQL)
+✅ Submission history (MySQL)
 
-    ✅ Периодическая проверка
+✅ Periodic checks
 
-    ✅ Защита от дубликатов
+✅ Duplicate protection
+```
